@@ -1,0 +1,81 @@
+# CI/CD: build the app and deploy it to GitHub Pages automatically.
+#
+# One-time setup (after first push):
+#   Settings -> Pages -> Source -> select "GitHub Actions"
+#
+# Afterwards, every push to the default branch builds and publishes the site:
+#   https://<username>.github.io/<repo>/
+
+name: Build and deploy to GitHub Pages
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  # ---------------------------------------------------------------
+  # 1) Type-check + production build (also runs on pull requests)
+  # ---------------------------------------------------------------
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Type-check
+        run: npx tsc --noEmit
+
+      - name: Build
+        run: npm run build
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: dist
+          path: dist
+          retention-days: 7
+
+      - name: Upload Pages artifact
+        if: github.event_name != 'pull_request'
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: dist
+
+  # ---------------------------------------------------------------
+  # 2) Deploy to GitHub Pages (main branch only)
+  # Optional: safe to skip when the project is hosted on Vercel.
+  # Enable it by selecting "GitHub Actions" under Settings -> Pages.
+  # ---------------------------------------------------------------
+  deploy:
+    if: github.event_name != 'pull_request'
+    needs: build
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
